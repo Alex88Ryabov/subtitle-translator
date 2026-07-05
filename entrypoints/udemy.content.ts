@@ -1,6 +1,6 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { settingsItem } from '@/lib/settings';
-import { DEFAULT_SETTINGS, type Settings, type TranslatedCue } from '@/lib/types';
+import { DEFAULT_SETTINGS, type Cue, type Settings, type TranslatedCue } from '@/lib/types';
 import { SubtitleOverlay } from '@/lib/overlay';
 import { parseVtt } from '@/lib/vtt';
 import { requestText, requestTranslation } from '@/lib/messaging';
@@ -12,6 +12,7 @@ const TAG = '[course-translator]';
 const SYNC_INTERVAL_MS = 250;
 const VIDEO_POLL_MS = 500;
 const FALLBACK_DEBOUNCE_MS = 150;
+const NATIVE_TRACK_WAIT_MS = 8000;
 const HIDE_STYLE_ID = 'course-translator-hide-native-captions';
 
 /** Элемент data.asset.captions[] из api-2.0. Поля могут отсутствовать. */
@@ -22,30 +23,99 @@ interface Caption {
   source?: string;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 /** lectureId из URL вида /course/{slug}/learn/lecture/{id}. null — не страница лекции. */
 function getLectureId(url: string = location.href): string | null {
   const m = /\/learn\/lecture\/(\d+)/.exec(url);
   return m ? m[1]! : null;
 }
 
-/** courseId из data-module-args лоадера Udemy (JSON с courseId). */
-function resolveCourseId(): string | null {
-  try {
-    const el = document.querySelector<HTMLElement>('.ud-app-loader');
-    const raw = el?.dataset['moduleArgs'];
-    if (!raw) return null;
-    const args = JSON.parse(raw) as { courseId?: number | string };
-    return args.courseId != null ? String(args.courseId) : null;
-  } catch (e) {
-    console.warn(`${TAG} failed to parse module args`, e);
-    return null;
-  }
+/** slug курса из URL /course/{slug}/... */
+function getCourseSlug(url: string = location.href): string | null {
+  const m = /\/course\/([^/?#]+)/.exec(new URL(url).pathname);
+  return m ? m[1]! : null;
 }
 
 /**
- * Метаданные субтитров лекции через приватный api-2.0 (работает с куками
- * залогиненного пользователя). null — нет доступа/нет субтитров (не фатально:
- * остаётся DOM-fallback).
+ * courseId: Udemy мигрирует фронтенд (Next.js), поэтому пробуем несколько
+ * источников по очереди — от старых к новым, затем через их же API по slug.
+ */
+async function resolveCourseId(): Promise<string | null> {
+  // 1) классический лоадер SPA-плеера
+  try {
+    const el = document.querySelector<HTMLElement>('.ud-app-loader');
+    const raw = el?.dataset['moduleArgs'];
+    if (raw) {
+      const args = JSON.parse(raw) as { courseId?: number | string; course_id?: number | string };
+      const id = args.courseId ?? args.course_id;
+      if (id != null) {
+        console.log(`${TAG} courseId via .ud-app-loader: ${id}`);
+        return String(id);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) атрибут лендинга курса
+  const clp = document
+    .querySelector<HTMLElement>('[data-clp-course-id]')
+    ?.getAttribute('data-clp-course-id');
+  if (clp) {
+    console.log(`${TAG} courseId via data-clp-course-id: ${clp}`);
+    return clp;
+  }
+
+  // 3) инлайн-скрипты (Next.js встраивает пропсы в разметку; кавычки могут быть экранированы)
+  for (const s of Array.from(document.scripts)) {
+    if (s.src || !s.textContent) continue;
+    const m =
+      /courseId\\?["']?\s*[:=]\s*\\?["']?(\d{3,})/.exec(s.textContent) ??
+      /course_id\\?["']?\s*[:=]\s*\\?["']?(\d{3,})/.exec(s.textContent);
+    if (m) {
+      console.log(`${TAG} courseId via inline script: ${m[1]}`);
+      return m[1]!;
+    }
+  }
+
+  // 4) api-2.0 по slug (публичный эндпоинт, работает с куками браузера)
+  const slug = getCourseSlug();
+  if (slug) {
+    try {
+      const res = await fetch(
+        `${location.origin}/api-2.0/courses/${slug}/?fields[course]=id`,
+        {
+          credentials: 'include',
+          headers: {
+            'x-requested-with': 'XMLHttpRequest',
+            accept: 'application/json, text/plain, */*',
+          },
+        },
+      );
+      if (res.ok) {
+        const json = (await res.json()) as { id?: number | string };
+        if (json.id != null) {
+          console.log(`${TAG} courseId via api-2.0 slug lookup: ${json.id}`);
+          return String(json.id);
+        }
+      } else {
+        console.warn(`${TAG} slug lookup returned ${res.status}`);
+      }
+    } catch (e) {
+      console.warn(`${TAG} slug lookup failed`, e);
+    }
+  }
+
+  console.warn(`${TAG} courseId not found (all strategies exhausted)`);
+  return null;
+}
+
+/**
+ * Метаданные субтитров лекции через приватный api-2.0 (куки залогиненного
+ * пользователя). null — нет доступа/нет субтитров (не фатально: есть fallback'и).
  */
 async function fetchCaptions(courseId: string, lectureId: string): Promise<Caption[] | null> {
   try {
@@ -54,10 +124,13 @@ async function fetchCaptions(courseId: string, lectureId: string): Promise<Capti
       `/lectures/${lectureId}/?fields[lecture]=asset&fields[asset]=captions`;
     const res = await fetch(url, {
       credentials: 'include',
-      headers: { 'x-requested-with': 'XMLHttpRequest' },
+      headers: {
+        'x-requested-with': 'XMLHttpRequest',
+        accept: 'application/json, text/plain, */*',
+      },
     });
     if (!res.ok) {
-      console.warn(`${TAG} captions API returned ${res.status}`);
+      console.warn(`${TAG} captions API returned ${res.status} (${url})`);
       return null;
     }
     const json = (await res.json()) as {
@@ -65,6 +138,10 @@ async function fetchCaptions(courseId: string, lectureId: string): Promise<Capti
       data?: { asset?: { captions?: Caption[] } };
     };
     const captions = json.asset?.captions ?? json.data?.asset?.captions;
+    console.log(
+      `${TAG} captions API ok: ${Array.isArray(captions) ? captions.length : 'no'} tracks`,
+      Array.isArray(captions) ? captions.map((c) => c.video_label ?? c.locale_id) : '',
+    );
     return Array.isArray(captions) ? captions : null;
   } catch (e) {
     console.warn(`${TAG} captions API failed`, e);
@@ -99,6 +176,46 @@ async function fetchVtt(url: string, signal: AbortSignal): Promise<string | null
     return null;
   }
   return resp.text;
+}
+
+/**
+ * План Б: прочитать cue из video.textTracks (если плеер использует нативные
+ * треки). Даёт полный трек с таймингами — то же качество, что и API-путь.
+ */
+async function readNativeTrackCues(
+  v: HTMLVideoElement,
+  signal: AbortSignal,
+): Promise<Cue[] | null> {
+  const deadline = Date.now() + NATIVE_TRACK_WAIT_MS;
+  while (Date.now() < deadline && !signal.aborted) {
+    const tracks = Array.from(v.textTracks ?? []);
+    const en =
+      tracks.find((t) => /^en/i.test(t.language) || /english/i.test(t.label)) ??
+      tracks.find((t) => t.kind === 'subtitles' || t.kind === 'captions');
+    if (en) {
+      // 'disabled' не грузит cue; 'hidden' грузит, не показывая. Активный
+      // 'showing' не трогаем — у него cue и так есть.
+      if (en.mode === 'disabled') en.mode = 'hidden';
+      if (en.cues && en.cues.length > 0) {
+        console.log(`${TAG} native textTrack found: ${en.cues.length} cues (${en.label})`);
+        const cues: Cue[] = [];
+        for (const raw of Array.from(en.cues)) {
+          const c = raw as VTTCue;
+          const text = (c.text ?? '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (text !== '' && c.endTime > c.startTime) {
+            cues.push({ start: c.startTime, end: c.endTime, text });
+          }
+        }
+        return cues.length > 0 ? cues : null;
+      }
+    }
+    await sleep(500);
+  }
+  console.log(`${TAG} no native textTracks with cues`);
+  return null;
 }
 
 /** Бинарный поиск активного cue (cues отсортированы по start). -1 — нет активного. */
@@ -137,6 +254,15 @@ function setNativeCaptionsHidden(hidden: boolean): void {
   }
 }
 
+/** Элемент текста нативного субтитра (селекторы по убыванию надёжности). */
+function findCaptionTextEl(): Element | null {
+  return (
+    document.querySelector('[data-purpose="captions-cue-text"]') ??
+    document.querySelector('[class*="captions-display--captions-cue-text"]') ??
+    document.querySelector('[class*="captions-cue-text"]')
+  );
+}
+
 export default defineContentScript({
   matches: ['*://*.udemy.com/*'],
 
@@ -163,6 +289,7 @@ export default defineContentScript({
     let videoPoll: number | null = null;
     let fallbackObserver: MutationObserver | null = null;
     let fallbackTimer: number | null = null;
+    let fallbackHintTimer: number | null = null;
     let lastFallbackText = '';
 
     let destroyed = false;
@@ -271,9 +398,8 @@ export default defineContentScript({
     }
 
     // ---------- fallback: наблюдение за DOM нативных субтитров ----------
-    // Когда api-2.0 недоступен (нет подписки/эндпоинт изменился), переводим
-    // построчно текст из [data-purpose="captions-cue-text"]. Качество ниже
-    // (нет склейки предложений), зато не зависит от приватного API.
+    // Последний рубеж: переводим построчно текст нативного субтитра.
+    // Качество ниже (нет склейки предложений), зато не зависит от API/треков.
     function startDomFallback(): void {
       stopDomFallback();
       console.log(`${TAG} udemy: DOM fallback mode`);
@@ -281,6 +407,22 @@ export default defineContentScript({
       // Нативные субтитры прячем и здесь: visibility:hidden не мешает
       // MutationObserver читать их текст, а дублирования на экране нет.
       setNativeCaptionsHidden(true);
+
+      // Если за 12 c не увидели ни одной строки — вероятно, CC выключены
+      // (или Udemy сменил разметку) — подсказываем пользователю.
+      fallbackHintTimer = window.setTimeout(() => {
+        if (destroyed || lastFallbackText !== '') return;
+        const el = findCaptionTextEl();
+        console.warn(
+          `${TAG} fallback: caption element ${el ? 'exists but no text yet' : 'NOT FOUND'}`,
+        );
+        overlay.showStatus(
+          el
+            ? 'Субтитры пока не появились — проверьте, что CC включены'
+            : 'Не вижу субтитров в плеере — включите английские CC',
+          true,
+        );
+      }, 12000);
 
       const handle = (): void => {
         if (fallbackTimer !== null) clearTimeout(fallbackTimer);
@@ -305,13 +447,17 @@ export default defineContentScript({
         clearTimeout(fallbackTimer);
         fallbackTimer = null;
       }
+      if (fallbackHintTimer !== null) {
+        clearTimeout(fallbackHintTimer);
+        fallbackHintTimer = null;
+      }
       lastFallbackText = '';
     }
 
     async function translateFallbackLine(): Promise<void> {
       try {
         if (!settings.enabled || destroyed) return;
-        const el = document.querySelector('[data-purpose="captions-cue-text"]');
+        const el = findCaptionTextEl();
         const text = (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
         if (text === '' || text === lastFallbackText) return;
         lastFallbackText = text;
@@ -364,6 +510,56 @@ export default defineContentScript({
       }
     }
 
+    // ---------- перевод полного трека (общий для API-пути и textTracks) ----------
+    async function activateTrack(
+      rawCues: Cue[],
+      keyFor: (engine: string) => string,
+      alive: () => boolean,
+    ): Promise<void> {
+      let translated: TranslatedCue[];
+      if (settings.engine === 'chrome-local') {
+        try {
+          const cached = await getCachedCues(keyFor('chrome-local'));
+          if (cached) {
+            translated = cached;
+          } else {
+            translated = await translateCues(rawCues, settings.targetLang, chromeLocalProvider);
+            await setCachedCues(keyFor('chrome-local'), translated);
+          }
+        } catch (e) {
+          console.warn(`${TAG} chrome-local failed, falling back to google-free`, e);
+          if (!alive()) return;
+          overlay.showStatus('Локальный переводчик недоступен — использую Google', false, true);
+          const resp = await requestTranslation({
+            cacheKey: keyFor('google-free'),
+            cues: rawCues,
+            targetLang: settings.targetLang,
+            engine: 'google-free',
+          });
+          if (!resp.ok || !resp.cues) throw new Error(resp.error ?? 'translation failed');
+          translated = resp.cues;
+        }
+      } else {
+        const resp = await requestTranslation({
+          cacheKey: keyFor(settings.engine),
+          cues: rawCues,
+          targetLang: settings.targetLang,
+          engine: settings.engine,
+        });
+        if (!resp.ok || !resp.cues) throw new Error(resp.error ?? 'translation failed');
+        translated = resp.cues;
+      }
+
+      if (!alive()) return;
+      translated = [...translated].sort((a, b) => a.start - b.start);
+      cues = translated;
+      activeCueIndex = -1;
+      overlay.hideStatus();
+      setNativeCaptionsHidden(true);
+      console.log(`${TAG} udemy: ${translated.length} cues ready`);
+      tick();
+    }
+
     // ---------- настройка текущей лекции ----------
     async function setupLecture(): Promise<void> {
       currentAbort?.abort();
@@ -382,7 +578,10 @@ export default defineContentScript({
 
       const lectureId = getLectureId();
       currentLectureId = lectureId;
-      if (!lectureId) return; // не страница лекции — ждём навигации
+      if (!lectureId) {
+        console.log(`${TAG} udemy: not a lecture page (${location.pathname})`);
+        return;
+      }
 
       try {
         const v = await waitForVideo(abort.signal);
@@ -391,78 +590,50 @@ export default defineContentScript({
 
         overlay.showStatus('Перевожу субтитры…', false, true);
 
-        const courseId = resolveCourseId();
+        // План А: полный VTT через api-2.0.
+        const courseId = await resolveCourseId();
+        if (!alive()) return;
         const captions = courseId ? await fetchCaptions(courseId, lectureId) : null;
         if (!alive()) return;
-
         const caption = captions ? pickCaption(captions) : null;
-        if (!caption?.url) {
-          // Нет доступа к API или нет треков — построчный режим по DOM.
-          startDomFallback();
-          return;
-        }
 
-        const vttText = await fetchVtt(caption.url, abort.signal);
-        if (!alive()) return;
-        if (vttText === null) {
-          startDomFallback();
-          return;
-        }
-
-        const rawCues = parseVtt(vttText);
-        if (rawCues.length === 0) {
-          overlay.showStatus('Файл субтитров пуст — переводить нечего');
-          return;
-        }
-
-        // Ключ не включает подписанные query-параметры URL (они меняются) —
-        // хэшируем только путь файла.
-        const vttPath = caption.url.split('?')[0]!;
-        const keyFor = (engine: string): string =>
-          `udemy:${courseId}:${lectureId}:${settings.targetLang}:${engine}:${hashString(vttPath)}`;
-
-        let translated: TranslatedCue[];
-        if (settings.engine === 'chrome-local') {
-          try {
-            const cached = await getCachedCues(keyFor('chrome-local'));
-            if (cached) {
-              translated = cached;
-            } else {
-              translated = await translateCues(rawCues, settings.targetLang, chromeLocalProvider);
-              await setCachedCues(keyFor('chrome-local'), translated);
+        if (caption?.url) {
+          const vttText = await fetchVtt(caption.url, abort.signal);
+          if (!alive()) return;
+          if (vttText !== null) {
+            const rawCues = parseVtt(vttText);
+            if (rawCues.length > 0) {
+              // Ключ без подписанных query-параметров URL (они меняются).
+              const vttPath = caption.url.split('?')[0]!;
+              await activateTrack(
+                rawCues,
+                (engine) =>
+                  `udemy:${courseId}:${lectureId}:${settings.targetLang}:${engine}:${hashString(vttPath)}`,
+                alive,
+              );
+              return;
             }
-          } catch (e) {
-            console.warn(`${TAG} chrome-local failed, falling back to google-free`, e);
-            if (!alive()) return;
-            overlay.showStatus('Локальный переводчик недоступен — использую Google', false, true);
-            const resp = await requestTranslation({
-              cacheKey: keyFor('google-free'),
-              cues: rawCues,
-              targetLang: settings.targetLang,
-              engine: 'google-free',
-            });
-            if (!resp.ok || !resp.cues) throw new Error(resp.error ?? 'translation failed');
-            translated = resp.cues;
+            console.warn(`${TAG} VTT parsed to 0 cues`);
           }
-        } else {
-          const resp = await requestTranslation({
-            cacheKey: keyFor(settings.engine),
-            cues: rawCues,
-            targetLang: settings.targetLang,
-            engine: settings.engine,
-          });
-          if (!resp.ok || !resp.cues) throw new Error(resp.error ?? 'translation failed');
-          translated = resp.cues;
         }
 
+        // План Б: нативные textTracks у <video>.
+        console.log(`${TAG} API path unavailable, trying native textTracks…`);
+        const nativeCues = await readNativeTrackCues(v, abort.signal);
         if (!alive()) return;
-        translated = [...translated].sort((a, b) => a.start - b.start);
-        cues = translated;
-        activeCueIndex = -1;
-        overlay.hideStatus();
-        setNativeCaptionsHidden(true);
-        console.log(`${TAG} udemy lecture ${lectureId}: ${translated.length} cues ready`);
-        tick();
+        if (nativeCues && nativeCues.length > 0) {
+          const seed = `${nativeCues.length}:${nativeCues[0]!.text}`;
+          await activateTrack(
+            nativeCues,
+            (engine) =>
+              `udemy:${courseId ?? 'x'}:${lectureId}:${settings.targetLang}:${engine}:${hashString(seed)}`,
+            alive,
+          );
+          return;
+        }
+
+        // План В: построчный перевод по DOM.
+        startDomFallback();
       } catch (e) {
         if (abort.signal.aborted || destroyed) return;
         const msg = e instanceof Error ? e.message : String(e);
@@ -515,7 +686,7 @@ export default defineContentScript({
     cleanups.push(unwatch);
 
     // ---------- старт ----------
-    console.log(`${TAG} udemy content script loaded`);
+    console.log(`${TAG} udemy content script loaded (v2 diagnostics)`);
     void setupLecture();
   },
 });
