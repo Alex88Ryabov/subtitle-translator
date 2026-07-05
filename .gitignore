@@ -1,0 +1,10 @@
+node_modules/
+.wxt/
+.output/
+stats.html
+stats-*.json
+.env
+.env.*
+.grepai/
+.idea/
+*.log
