@@ -249,7 +249,9 @@ export default defineContentScript({
         const vttUrl = pickSubtitleUrl(lesson?.subtitle);
         if (!vttUrl) {
           console.log(`${TAG} lesson ${index}: no subtitles`);
-          overlay.hideStatus();
+          // У многих курсов на coursehunter нет файлов субтитров вовсе —
+          // сообщаем явно, иначе кажется, что расширение не работает.
+          overlay.showStatus('У этого урока нет субтитров — переводить нечего');
           return;
         }
 
@@ -263,7 +265,7 @@ export default defineContentScript({
         const rawCues = parseVtt(vttText);
         if (rawCues.length === 0) {
           console.log(`${TAG} lesson ${index}: empty VTT`);
-          overlay.hideStatus();
+          overlay.showStatus('Файл субтитров пуст — переводить нечего');
           return;
         }
 
