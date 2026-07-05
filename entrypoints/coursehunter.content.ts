@@ -106,6 +106,8 @@ function findActiveCueIndex(cues: TranslatedCue[], t: number): number {
 
 export default defineContentScript({
   matches: ['*://coursehunter.net/*', '*://*.coursehunter.net/*'],
+  // В сборке для Chrome Web Store этот entrypoint исключён (см. wxt.config.ts).
+  exclude: ['store'],
 
   async main(ctx) {
     // ---------- состояние ----------

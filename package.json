@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
+    "build:store": "wxt build -b store",
     "zip": "wxt zip",
+    "zip:store": "wxt zip -b store",
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "wxt prepare"
