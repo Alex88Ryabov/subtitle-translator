@@ -149,11 +149,14 @@ async function fetchCaptions(courseId: string, lectureId: string): Promise<Capti
   }
 }
 
-/** Выбрать английский трек; ручной приоритетнее автогенерированного ('[Auto]'). */
+/**
+ * Выбрать английский трек; ручной приоритетнее автогенерированного.
+ * video_label локализована под язык интерфейса Udemy: '[Auto]' / '[авто]' / ….
+ */
 function pickCaption(captions: Caption[]): Caption | null {
   const withUrl = captions.filter((c) => c.url);
   const en = withUrl.filter((c) => /^en/i.test(c.locale_id ?? ''));
-  const manual = en.find((c) => !/auto/i.test(c.video_label ?? ''));
+  const manual = en.find((c) => !/auto|авто|automat/i.test(c.video_label ?? ''));
   return manual ?? en[0] ?? withUrl[0] ?? null;
 }
 
