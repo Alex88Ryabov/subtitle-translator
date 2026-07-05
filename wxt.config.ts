@@ -13,7 +13,7 @@ export default defineConfig({
   manifest: ({ browser }) => {
     const isStore = browser === 'store';
     return {
-      name: 'Course Subtitle Translator',
+      name: 'Alex Apps Subtitle Translator',
       description: isStore
         ? 'Переводит английские субтитры курсов Udemy на украинский и русский: двойные субтитры поверх видео'
         : 'Переводит английские субтитры курсов на украинский и русский (Udemy, CourseHunter)',

@@ -38,7 +38,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1 className="title">Course Subtitle Translator</h1>
+        <h1 className="title">Subtitle Translator</h1>
         <label className="switch" title="Перевод включён">
           <input
             type="checkbox"
@@ -126,7 +126,7 @@ export default function App() {
         </div>
       </section>
 
-      <footer className="footer">v{browser.runtime.getManifest().version}</footer>
+      <footer className="footer">Alex Apps · v{browser.runtime.getManifest().version}</footer>
     </div>
   );
 }
