@@ -74,6 +74,18 @@ export function splitTranslationsAcrossCues(
     }
 
     const words = translation.split(/\s+/).filter((w) => w !== '');
+
+    // Слов меньше, чем cue: пропорциональная разбивка оставила бы часть cue
+    // с пустым переводом — оверлей бы мигал посреди предложения.
+    // Вместо этого показываем весь перевод на протяжении всего предложения.
+    if (words.length < idxs.length) {
+      const whole = words.join(' ');
+      for (const idx of idxs) {
+        if (idx >= 0 && idx < result.length) result[idx].translation = whole;
+      }
+      continue;
+    }
+
     const counts = allocateWordCounts(
       idxs.map((i) => (cues[i]?.text.length ?? 0)),
       words.length,
@@ -93,8 +105,8 @@ export function splitTranslationsAcrossCues(
 
 /**
  * Распределить wordCount слов по k корзинам пропорционально lengths
- * (накопительная доля). Каждая корзина получает >= 1 слова, если слов хватает;
- * последняя забирает остаток. Сумма counts всегда равна wordCount.
+ * (накопительная доля). Вызывается только при wordCount >= k: каждая корзина
+ * получает >= 1 слова, последняя забирает остаток. Сумма counts равна wordCount.
  */
 function allocateWordCounts(lengths: number[], wordCount: number): number[] {
   const k = lengths.length;
@@ -115,12 +127,8 @@ function allocateWordCounts(lengths: number[], wordCount: number): number[] {
     }
     let n = Math.round((wordCount * cum) / weightSum) - assigned;
     const remainingBuckets = k - 1 - j;
-    if (wordCount >= k) {
-      // каждому >= 1 слова; оставить хотя бы по одному на оставшиеся корзины
-      n = Math.max(1, Math.min(n, wordCount - assigned - remainingBuckets));
-    } else {
-      n = Math.max(0, Math.min(n, wordCount - assigned));
-    }
+    // каждому >= 1 слова; оставить хотя бы по одному на оставшиеся корзины
+    n = Math.max(1, Math.min(n, wordCount - assigned - remainingBuckets));
     counts.push(n);
     assigned += n;
   }

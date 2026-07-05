@@ -184,9 +184,32 @@ export default defineContentScript({
         } else {
           const c = cues[idx]!;
           overlay.update(c.text, c.translation);
+          hideNativeCue(c.text);
         }
       } catch (e) {
         console.warn(`${TAG} sync tick failed`, e);
+      }
+    }
+
+    /**
+     * Спрятать нативный субтитр PlayerJS, иначе поверх видео висят три блока
+     * текста (нативный EN + наш оригинал + перевод). PlayerJS рисует cue
+     * в анонимных <pjsdiv> без стабильных классов и пересоздаёт их на каждый
+     * cue, поэтому ищем по совпадению текста с активным cue и прячем на месте.
+     */
+    function hideNativeCue(cueText: string): void {
+      const player = document.querySelector('#player');
+      if (!player) return;
+      const needle = cueText.replace(/\s+/g, ' ').trim();
+      if (needle === '') return;
+      for (const el of player.querySelectorAll<HTMLElement>('pjsdiv')) {
+        if (el.childElementCount !== 0) continue; // ищем листовые узлы с текстом
+        const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+        if (text === needle) {
+          // Прячем ближайший непрозрачный контейнер (фон подложки cue).
+          const box = (el.parentElement?.tagName === 'PJSDIV' ? el.parentElement : el) as HTMLElement;
+          box.style.visibility = 'hidden';
+        }
       }
     }
 
@@ -262,7 +285,7 @@ export default defineContentScript({
             // Любой сбой локального движка → fallback на google-free в background.
             console.warn(`${TAG} chrome-local failed, falling back to google-free`, e);
             if (!alive()) return;
-            overlay.showStatus('Локальный переводчик недоступен — использую Google');
+            overlay.showStatus('Локальный переводчик недоступен — использую Google', false, true);
             const resp = await requestTranslation({
               cacheKey: keyFor('google-free'),
               cues: rawCues,

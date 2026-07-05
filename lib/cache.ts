@@ -28,8 +28,41 @@ export async function getCachedCues(key: string): Promise<TranslatedCue[] | null
   return entry.cues;
 }
 
-/** Сохранить переведённые cue (перевод лекции делается один раз). */
+/**
+ * Сохранить переведённые cue (перевод лекции делается один раз).
+ * НИКОГДА не бросает: сбой записи в кэш не должен превращать успешный перевод
+ * в ошибку для пользователя. При переполнении квоты storage.local (10 МБ)
+ * вытесняет самые старые записи и повторяет запись один раз.
+ */
 export async function setCachedCues(key: string, cues: TranslatedCue[]): Promise<void> {
   const entry: CacheEntry = { v: CACHE_VERSION, savedAt: Date.now(), cues };
-  await browser.storage.local.set({ [CACHE_PREFIX + key]: entry });
+  const record = { [CACHE_PREFIX + key]: entry };
+  try {
+    await browser.storage.local.set(record);
+  } catch (e) {
+    console.warn('[course-translator] cache write failed, evicting oldest entries', e);
+    try {
+      await evictOldestEntries(EVICT_COUNT);
+      await browser.storage.local.set(record);
+    } catch (e2) {
+      console.warn('[course-translator] cache write failed after eviction, giving up', e2);
+    }
+  }
+}
+
+/** Сколько самых старых записей удалять при переполнении. */
+const EVICT_COUNT = 20;
+
+/** Удалить count самых старых записей кэша (LRU по savedAt). */
+async function evictOldestEntries(count: number): Promise<void> {
+  const all = await browser.storage.local.get(null);
+  const cacheKeys = Object.keys(all)
+    .filter((k) => k.startsWith(CACHE_PREFIX))
+    .sort((a, b) => {
+      const ea = all[a] as CacheEntry | undefined;
+      const eb = all[b] as CacheEntry | undefined;
+      return (ea?.savedAt ?? 0) - (eb?.savedAt ?? 0);
+    });
+  const toRemove = cacheKeys.slice(0, count);
+  if (toRemove.length > 0) await browser.storage.local.remove(toRemove);
 }

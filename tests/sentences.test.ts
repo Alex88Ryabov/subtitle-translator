@@ -157,24 +157,26 @@ describe('splitTranslationsAcrossCues', () => {
     expect(result.map((c) => c.translation).join(' ')).toBe(translation);
   });
 
-  it('handles a single word across many cues (some cues get empty translation)', () => {
+  it('shows the whole translation on every cue when words < cues (no blank flicker)', () => {
     const cues = makeCues(['one', 'two', 'three.']);
     const sentences = mergeCuesIntoSentences(cues);
     const result = splitTranslationsAcrossCues(cues, sentences, ['слово']);
-    const nonEmpty = result.map((c) => c.translation).filter((t) => t !== '');
-    expect(nonEmpty).toEqual(['слово']); // слово ровно один раз, без дублей
+    // Перевод короче предложения: каждый cue показывает весь перевод,
+    // чтобы оверлей не мигал пустыми линиями посреди предложения.
+    expect(result.map((c) => c.translation)).toEqual(['слово', 'слово', 'слово']);
   });
 
-  it('handles fewer words than cues without losing or duplicating words', () => {
+  it('shows the whole translation on every cue when fewer words than cues', () => {
     const cues = makeCues(['aaaa', 'bbbb', 'cccc', 'dddd.']);
     const sentences = mergeCuesIntoSentences(cues);
     const translation = 'раз два';
     const result = splitTranslationsAcrossCues(cues, sentences, [translation]);
-    const rejoined = result
-      .map((c) => c.translation)
-      .filter((t) => t !== '')
-      .join(' ');
-    expect(rejoined).toBe(translation);
+    expect(result.map((c) => c.translation)).toEqual([
+      'раз два',
+      'раз два',
+      'раз два',
+      'раз два',
+    ]);
   });
 
   it('handles empty translations', () => {
