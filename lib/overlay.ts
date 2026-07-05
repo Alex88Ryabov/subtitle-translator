@@ -18,6 +18,10 @@ export class SubtitleOverlay {
   private mode: DisplayMode = 'dual';
   private lastOriginal = '';
   private lastTranslation = '';
+  // Статус переживает перемонтирование (SPA пересоздаёт контейнер плеера).
+  private lastStatusText = '';
+  private lastStatusIsError = false;
+  private lastStatusSticky = false;
 
   /** Создать host с shadow root и вставить в контейнер (обычно #player). */
   mount(container: HTMLElement): void {
@@ -94,6 +98,15 @@ export class SubtitleOverlay {
     this.line2 = line2;
     this.statusEl = statusEl;
     this.render();
+    // Восстановить статус, если оверлей перемонтирован посреди работы.
+    if (this.lastStatusText !== '') {
+      this.showStatus(this.lastStatusText, this.lastStatusIsError, this.lastStatusSticky);
+    }
+  }
+
+  /** Смонтирован ли оверлей именно в этот контейнер и жив ли он в DOM. */
+  isMountedIn(container: HTMLElement): boolean {
+    return this.host !== null && this.host.isConnected && this.host.parentElement === container;
   }
 
   /** Показать пару оригинал/перевод. Пустая строка скрывает соответствующую линию. */
@@ -121,6 +134,9 @@ export class SubtitleOverlay {
    * (например, «Перевожу…» на время долгого перевода). Пустой текст скрывает сразу.
    */
   showStatus(text: string, isError = false, sticky = false): void {
+    this.lastStatusText = text;
+    this.lastStatusIsError = isError;
+    this.lastStatusSticky = sticky;
     if (!this.statusEl) return;
     if (this.statusTimer !== null) {
       clearTimeout(this.statusTimer);
@@ -138,6 +154,7 @@ export class SubtitleOverlay {
         () => {
           if (this.statusEl) this.statusEl.style.display = 'none';
           this.statusTimer = null;
+          this.lastStatusText = ''; // скрытый статус не должен воскресать при перемонтировании
         },
         isError ? STATUS_HIDE_ERROR_MS : STATUS_HIDE_MS,
       );

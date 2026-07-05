@@ -10,6 +10,10 @@ export default defineConfig({
       'https://translate.googleapis.com/*',
       'https://coursehunter.net/*',
       'https://*.coursehunter.net/*',
+      'https://*.udemy.com/*',
+      // VTT-файлы субтитров Udemy: подписанные URL на CDN (fetch через background).
+      'https://*.udemycdn.com/*',
+      'https://udemy-captions.s3.amazonaws.com/*',
     ],
   },
 });
