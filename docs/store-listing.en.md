@@ -2,7 +2,7 @@
 
 English version of `store-listing.md`, ready to paste into the Chrome Web Store
 Developer Console. Store build: `npm run zip:store` → archive in `.output/`
-(variant **without** CourseHunter — manifest lists only Udemy).
+(variant **without** CourseHunter — manifest lists only Udemy and Coursera).
 
 ---
 
@@ -14,12 +14,13 @@ Developer Console. Store build: `npm run zip:store` → archive in `.output/`
 
 ## Short description (max 132 characters)
 
-> Translate English Udemy course subtitles into Ukrainian or Russian — dual subtitles over the video player
+> Translate English Udemy and Coursera subtitles into Ukrainian or Russian — dual subtitles over the video player
 
 ## Detailed description
 
 ```
-Watch English-language Udemy courses with subtitles in your own language.
+Watch English-language Udemy and Coursera courses with subtitles in your own
+language.
 
 The extension translates a lecture's English subtitles on the fly and shows
 them over the video — as dual subtitles (original + translation, perfect for
@@ -37,12 +38,13 @@ FEATURES
 • No telemetry: the extension collects no data and runs no servers of its own
 
 HOW TO USE
-1. Open a course lecture on Udemy
+1. Open a course lecture on Udemy or Coursera
 2. The extension automatically finds the English subtitles and translates them
 3. Language and display mode are in the extension popup
 
-This extension is not affiliated with Udemy, Inc. To translate, subtitle text
-is sent to the translation service you selected (see the privacy policy).
+This extension is not affiliated with Udemy, Inc. or Coursera, Inc. To
+translate, subtitle text is sent to the translation service you selected
+(see the privacy policy).
 ```
 
 ## Category
@@ -58,8 +60,8 @@ English (Russian and Ukrainian listings can be added later)
 ## "Privacy practices" form answers
 
 **Single purpose description:**
-> Translates English course subtitles on Udemy into Ukrainian or Russian and
-> displays them over the video player.
+> Translates English course subtitles on Udemy and Coursera into Ukrainian or
+> Russian and displays them over the video player.
 
 **Permissions justification:**
 
@@ -68,6 +70,7 @@ English (Russian and Ukrainian listings can be added later)
 | `storage` | Store user settings (language, mode) and a local cache of translated subtitles |
 | `https://*.udemy.com/*` | Read lecture subtitles on Udemy pages and display the translation over the player |
 | `https://*.udemycdn.com/*`, `https://udemy-captions.s3.amazonaws.com/*` | Download the subtitle files (.vtt) that Udemy links to |
+| `https://www.coursera.org/*` | Read lecture subtitles on Coursera pages and download their VTT files |
 | `https://translate.googleapis.com/*` | Send subtitle text for translation |
 
 **Data usage disclosures:**
@@ -86,12 +89,13 @@ paste the link.
 
 Capture manually:
 1. Udemy lecture with dual subtitles (original + translation) — main screenshot
-2. Settings popup
-3. "Translation only" mode
+2. Coursera lecture with dual subtitles
+3. Settings popup
+4. "Translation only" mode
 
 ## Notes for reviewer
 
-> The extension reads the lecture's caption track (VTT) that Udemy already
-> serves to the logged-in user, translates it via the selected translation
-> service, and renders the translation in an overlay. It does not download
-> videos, does not bypass DRM, and does not collect any user data.
+> The extension reads the lecture's caption track (VTT) that Udemy or Coursera
+> already serves to the logged-in user, translates it via the selected
+> translation service, and renders the translation in an overlay. It does not
+> download videos, does not bypass DRM, and does not collect any user data.

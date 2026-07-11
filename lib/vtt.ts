@@ -35,8 +35,11 @@ function decodeEntities(text: string): string {
   return out.replace(/&amp;/g, '&');
 }
 
-/** Очистка текста cue: убрать <...>-теги, декодировать сущности, схлопнуть пробелы. */
-function cleanCueText(raw: string): string {
+/**
+ * Очистка текста cue: убрать <...>-теги, декодировать сущности, схлопнуть пробелы.
+ * Экспортируется для content-скриптов, читающих cue из video.textTracks.
+ */
+export function cleanCueText(raw: string): string {
   const noTags = raw.replace(/<[^>]*>/g, '');
   return decodeEntities(noTags).replace(/\s+/g, ' ').trim();
 }

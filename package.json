@@ -1,7 +1,7 @@
 {
   "name": "english-course-translator",
   "version": "1.0.0",
-  "description": "Chrome extension that translates English course subtitles to Ukrainian/Russian (Udemy, CourseHunter)",
+  "description": "Chrome extension that translates English course subtitles to Ukrainian/Russian (Udemy, Coursera, CourseHunter)",
   "private": true,
   "type": "module",
   "scripts": {

@@ -15,8 +15,8 @@ export default defineConfig({
     return {
       name: 'Alex Apps Subtitle Translator',
       description: isStore
-        ? 'Переводит английские субтитры курсов Udemy на украинский и русский: двойные субтитры поверх видео'
-        : 'Переводит английские субтитры курсов на украинский и русский (Udemy, CourseHunter)',
+        ? 'Переводит английские субтитры курсов Udemy и Coursera на украинский и русский: двойные субтитры поверх видео'
+        : 'Переводит английские субтитры курсов на украинский и русский (Udemy, Coursera, CourseHunter)',
       permissions: ['storage'],
       icons: {
         16: 'icon/16.png',
@@ -30,6 +30,9 @@ export default defineConfig({
         // VTT-файлы субтитров Udemy: подписанные URL на CDN (fetch через background).
         'https://*.udemycdn.com/*',
         'https://udemy-captions.s3.amazonaws.com/*',
+        // Coursera: VTT отдаёт same-origin subtitleAssetProxy; host_permission
+        // нужен только для запасного fetch через background.
+        'https://www.coursera.org/*',
         ...(isStore
           ? []
           : ['https://coursehunter.net/*', 'https://*.coursehunter.net/*']),

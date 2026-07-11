@@ -2,7 +2,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { settingsItem } from '@/lib/settings';
 import { DEFAULT_SETTINGS, type Cue, type Settings, type TranslatedCue } from '@/lib/types';
 import { SubtitleOverlay } from '@/lib/overlay';
-import { parseVtt } from '@/lib/vtt';
+import { cleanCueText, parseVtt } from '@/lib/vtt';
 import { requestText, requestTranslation } from '@/lib/messaging';
 import { getCachedCues, setCachedCues, hashString } from '@/lib/cache';
 import { translateCues } from '@/lib/pipeline';
@@ -204,10 +204,8 @@ async function readNativeTrackCues(
         const cues: Cue[] = [];
         for (const raw of Array.from(en.cues)) {
           const c = raw as VTTCue;
-          const text = (c.text ?? '')
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+          // cleanCueText — та же очистка, что у parseVtt (теги + HTML-сущности).
+          const text = cleanCueText(c.text ?? '');
           if (text !== '' && c.endTime > c.startTime) {
             cues.push({ start: c.startTime, end: c.endTime, text });
           }
