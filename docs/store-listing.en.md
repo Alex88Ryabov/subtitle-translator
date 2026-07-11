@@ -73,6 +73,20 @@ English (Russian and Ukrainian listings can be added later)
 | `https://www.coursera.org/*` | Read lecture subtitles on Coursera pages and download their VTT files |
 | `https://translate.googleapis.com/*` | Send subtitle text for translation |
 
+_Console-ready prose (paste verbatim into the Developer Console fields):_
+
+**`storage` justification field:**
+```
+Stores user settings (target language, display mode, font size) and a local cache of translated subtitle lines so each lecture is translated only once. No data leaves the device.
+```
+
+**Host permission justification field:**
+```
+udemy.com — reading the lecture's subtitle track and displaying the translation over the player. udemycdn.com and udemy-captions.s3.amazonaws.com — downloading the subtitle (.vtt) files referenced by Udemy.
+www.coursera.org — reading the lecture's subtitle track, downloading its subtitle (.vtt) files, and displaying the translation over the player.
+translate.googleapis.com — sending subtitle text for translation.
+```
+
 **Data usage disclosures:**
 - Website content (subtitle text) → sent to a third-party translation service;
   not sold, not used for purposes unrelated to the core feature, not used to
